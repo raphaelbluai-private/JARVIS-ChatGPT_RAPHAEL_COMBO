@@ -6,16 +6,22 @@ from Assistant.research_mode import ResearchAssistant
 
 load_dotenv()
 
-if len(os.environ['OPENAI_API_KEY'])==0: 
+if len(os.getenv('OPENAI_API_KEY', '')) == 0:
     print('openai API key not detected in .env')
     raise Exception("[$] openai API key is required. Learn more at https://platform.openai.com/account/api-keys")
 
-if len(os.environ['IBM_API_KEY'])==0: print('[free] IBM cloud API Key not detected in .env\nLearn more at: https://cloud.ibm.com/catalog/services/text-to-speech')
+if len(os.getenv('IBM_API_KEY', '')) == 0: print('[free] IBM cloud API Key not detected in .env\nLearn more at: https://cloud.ibm.com/catalog/services/text-to-speech')
 
-if len(os.environ['IBM_TTS_SERVICE'])==0: print('[free] IBM cloud TTS service not detected in .env\nLearn more at: https://cloud.ibm.com/catalog/services/text-to-speech')
+if len(os.getenv('IBM_TTS_SERVICE', '')) == 0: print('[free] IBM cloud TTS service not detected in .env\nLearn more at: https://cloud.ibm.com/catalog/services/text-to-speech')
+
+# RAPHAEL is the target assistant identity. Porcupine may require a custom
+# keyword model for non-built-in wake words, so the runtime falls back to the
+# passive listener if Porcupine cannot initialize the configured keyword.
+ASSISTANT_NAME = os.getenv('RAPHAEL_ASSISTANT_NAME', 'RAPHAEL')
+WAKE_KEYWORDS = [kw.strip().lower() for kw in os.getenv('RAPHAEL_WAKE_KEYWORDS', 'raphael').split(',') if kw.strip()]
 
 use_porcupine = True
-if len(os.environ['PORCUPINE_KEY']) == 0: 
+if len(os.getenv('PORCUPINE_KEY', '')) == 0:
     print('[free] PicoVoice not detected in .env\nLearn more at: https://picovoice.ai/platform/porcupine/')
     use_porcupine = False
 
@@ -26,7 +32,7 @@ print('### IMPORTING DEPENDANCIES ###')
 import pygame
 
 from Assistant import get_audio as myaudio
-from Assistant.VirtualAssistant import VirtualAssistant
+from Assistant.RaphaelAssistant import RaphaelAssistant
 from Assistant.tools import count_tokens
 
 print('DONE\n')
@@ -37,17 +43,19 @@ if __name__=="__main__":
     OFFLINE = False
     pygame.mixer.init()
 
-    # INITIATE JARVIS
-    print('initiating JARVIS voice...')
-    jarvis = VirtualAssistant(
+    # INITIATE RAPHAEL
+    print(f'initiating {ASSISTANT_NAME} voice...')
+    raphael = RaphaelAssistant(
         openai_api   = os.getenv('OPENAI_API_KEY'),
         ibm_api      = os.getenv('IBM_API_KEY'),
         ibm_url      = os.getenv('IBM_TTS_SERVICE'),
         elevenlabs_api = os.getenv('ELEVENLABS_API_KEY'),
         elevenlabs_voice = 'Antoni',
+        # Keep the existing voice sample for now to avoid breaking the repaired baseline.
+        # The extraction phase can replace this with a RAPHAEL-specific voice asset.
         voice_id     = {'en':'jarvis_en'},
         whisper_size = 'medium',
-        awake_with_keywords=["jarvis"],
+        awake_with_keywords=WAKE_KEYWORDS,
         model= "gpt-3.5-turbo",
         embed_model= "text-embedding-ada-002",
         RESPONSE_TIME = 3,
@@ -56,25 +64,31 @@ if __name__=="__main__":
         )
 
     while True:
-        if not(jarvis.is_awake):
-            print('\n awaiting for triggering words...')
+        if not(raphael.is_awake):
+            print(f'\n awaiting {ASSISTANT_NAME} wake word: {", ".join(WAKE_KEYWORDS)}...')
 
-            #block until the wakeword is heard, using porcupine
+            # Block until the wakeword is heard. If Porcupine cannot use the
+            # configured RAPHAEL keyword, fall back to passive speech recognition.
             if use_porcupine:
-                jarvis.block_until_wakeword()
-            else:
-                while not(jarvis.is_awake):
-                    jarvis.listen_passively()
+                try:
+                    raphael.block_until_wakeword()
+                except Exception as e:
+                    print(f'Porcupine wake word failed for {WAKE_KEYWORDS}: {e}')
+                    print('falling back to passive RAPHAEL listener...')
+                    use_porcupine = False
+            if not use_porcupine:
+                while not(raphael.is_awake):
+                    raphael.listen_passively()
         
-        jarvis.record_to_file('output.wav')
+        raphael.record_to_file('output.wav')
         
 
-        if jarvis.is_awake:
-            prompt, detected_language = myaudio.whisper_wav_to_text('output.wav', jarvis.interpreter, prior=jarvis.languages.keys())
+        if raphael.is_awake:
+            prompt, detected_language = myaudio.whisper_wav_to_text('output.wav', raphael.interpreter, prior=raphael.languages.keys())
 
             # check exit command
             if "THANKS" in prompt.upper() or len(prompt.split())<=1:
-                jarvis.go_to_sleep()
+                raphael.go_to_sleep()
                 continue
             
             if detected_language=='en':
@@ -82,29 +96,28 @@ if __name__=="__main__":
             else:
                 VoiceIdx = detected_language
             
-            jarvis.expand_conversation(role="user", content=prompt)
+            raphael.expand_conversation(role="user", content=prompt)
 
             # PROMPT MANAGING [BETA]
-            #flag = jarvis.analyze_prompt(prompt)
-            flag = '-1'
+            flag = raphael.analyze_prompt(prompt)
 
             # redirect the conversation to an action manager or to the LLM
             if (("1" in flag or "tool" in flag) and '-' not in flag):
-                print('(though): action')
-                response = jarvis.use_tools(prompt)
+                print('(thought): action')
+                response = raphael.use_tools(prompt)
                 response = response
             
             elif "2" in flag or "respond" in flag:
-                print('(though): response')
-                response = jarvis.get_answer(prompt)
+                print('(thought): response')
+                response = raphael.get_answer(prompt)
             elif "-1" in flag:
-                response = jarvis.switch_mode()
+                response = raphael.switch_mode()
             else:
-                print('(though): internet')
-                response = jarvis.secondary_agent(prompt)
+                print('(thought): internet')
+                response = raphael.secondary_agent(prompt)
 
-            jarvis.expand_conversation(role='assistant', content=response)
+            raphael.expand_conversation(role='assistant', content=response)
             pygame.mixer.stop()
-            jarvis.say(response, VoiceIdx=VoiceIdx, IBM=True)
+            raphael.say(response, VoiceIdx=VoiceIdx, IBM=True)
 
             print('\n')

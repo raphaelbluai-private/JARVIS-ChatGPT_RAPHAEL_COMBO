@@ -1,0 +1,7 @@
+name: RAPHAEL
+default_wake_keywords:
+  - raphael
+default_mode: CHAT
+voice_enabled: true
+text_console_enabled: true
+event_log_enabled: true
