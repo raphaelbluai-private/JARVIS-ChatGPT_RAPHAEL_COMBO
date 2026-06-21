@@ -32,7 +32,7 @@ print('### IMPORTING DEPENDANCIES ###')
 import pygame
 
 from Assistant import get_audio as myaudio
-from Assistant.VirtualAssistant import VirtualAssistant
+from Assistant.RaphaelAssistant import RaphaelAssistant
 from Assistant.tools import count_tokens
 
 print('DONE\n')
@@ -45,7 +45,7 @@ if __name__=="__main__":
 
     # INITIATE RAPHAEL
     print(f'initiating {ASSISTANT_NAME} voice...')
-    raphael = VirtualAssistant(
+    raphael = RaphaelAssistant(
         openai_api   = os.getenv('OPENAI_API_KEY'),
         ibm_api      = os.getenv('IBM_API_KEY'),
         ibm_url      = os.getenv('IBM_TTS_SERVICE'),
