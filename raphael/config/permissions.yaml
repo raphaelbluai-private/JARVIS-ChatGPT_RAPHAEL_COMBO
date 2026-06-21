@@ -1,0 +1,13 @@
+# RAPHAEL permission scaffold
+# High-impact actions require manual review before execution.
+
+risk_levels:
+  low:
+    review_required: false
+  medium:
+    review_required: false
+  high:
+    review_required: true
+
+default_policy:
+  unknown_risk_requires_review: true
